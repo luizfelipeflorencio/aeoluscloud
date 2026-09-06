@@ -1,0 +1,86 @@
+services:
+  mongodb:
+    image: mongo:6.0
+    restart: always
+    ports:
+      - "27019:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: adminpassword
+      MONGO_INITDB_DATABASE: aeolus_db
+    volumes:
+      - mongo_data:/data/db
+
+  minio:
+    image: minio/minio:latest
+    container_name: aeolus_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    volumes:
+      - minio_data:/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: aeolus_clickhouse
+    restart: always
+    ports:
+      - "8124:8123"
+    environment:
+      CLICKHOUSE_DB: aeolus_analytics
+      CLICKHOUSE_USER: clickhouse_user
+      CLICKHOUSE_PASSWORD: clickhouse_pass
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: clg_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    restart: on-failure
+    ports:
+      - 2182:2181
+
+  kafka:
+    container_name: clg_kafka
+    image: confluentinc/cp-kafka:7.9.1
+    restart: on-failure
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - 9093:9093
+
+  kafbat-ui:
+    container_name: clg_kafbat-ui
+    restart: on-failure
+    image: ghcr.io/kafbat/kafka-ui
+    network_mode: host
+    depends_on:
+      - kafka
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: local_cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: localhost:9093
+      SERVER_PORT: 8081
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: admin
+      SPRING_SECURITY_USER_PASSWORD: 123456
+
+volumes:
+  mongo_data:
+  minio_data:
+  clickhouse_data:

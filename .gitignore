@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage and build output
+coverage/
+dist/
+build/
+.nyc_output/
+
+# Temporary files and generated media
+**/tmp/*
+!**/tmp/empty
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# Runtime data
+*.pid
+*.pid.lock
+*.seed
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
