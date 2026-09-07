@@ -1,50 +1,62 @@
 # Plenus
 
-Sistema de captura de eventos de cameras composto por:
+API para cadastro de câmeras e processamento de eventos com imagem. Câmeras são armazenadas no MongoDB; eventos recebidos pelo Kafka têm suas imagens enviadas ao MinIO e seus metadados gravados no ClickHouse.
 
-- MongoDB: cadastro das cameras.
-- MinIO: armazenamento das imagens dos eventos.
-- ClickHouse: armazenamento e consulta dos eventos.
-- Kafka e Zookeeper: fila de eventos.
-- Kafbat UI: monitoramento do Kafka.
-- `device-event-api`: produtor de eventos e gerador de imagens.
-- API principal: cadastro de cameras, consumo dos eventos e consultas.
+## Arquitetura
 
-## Pre-requisitos
+```text
+Cliente
+  └─ API principal (Node.js / Express :3000)
+       ├─ MongoDB: cadastro de câmeras
+       ├─ device-event-api: registro de dispositivos
+       └─ Kafka consumer (device-events)
+            ├─ MinIO: imagens
+            └─ ClickHouse: metadados e consultas
+```
 
-Instale:
+O `device-event-api`, fornecido como imagem Docker, publica eventos no tópico Kafka `device-events` para cada dispositivo registrado.
 
-- WSL 2 com Ubuntu ou outra distribuicao Linux.
-- Docker Desktop com integracao habilitada para a distribuicao WSL.
-- Node.js 18 ou superior.
-- npm.
-- Git.
+## Pré-requisitos
 
-Todos os comandos abaixo foram escritos para Bash no WSL. Os comandos de API tambem podem ser executados no Postman.
+- Node.js 18 ou superior;
+- npm;
+- Docker Desktop com Docker Compose.
 
-## Portas utilizadas
+## Serviços e portas
 
-| Servico | URL/porta |
+| Serviço | Endereço externo |
 | --- | --- |
 | API principal | `http://localhost:3000` |
 | API de dispositivos | `http://localhost:3030` |
-| MongoDB | `localhost:27017` |
+| MongoDB | `localhost:27018` |
 | MinIO API | `http://localhost:9000` |
 | MinIO Console | `http://localhost:9001` |
-| ClickHouse HTTP | `http://localhost:8123` |
-| Kafka externo | `localhost:9092` |
-| Kafbat UI | `http://localhost:8080` |
+| ClickHouse HTTP | `http://localhost:8124` |
+| Kafka | `localhost:9092` |
+| Kafbat UI | `http://localhost:8082` |
 
-> Use somente o `docker-compose.yml` da raiz. O compose dentro de `backend-challenge-01-main` possui portas diferentes e nao deve ser iniciado junto com o compose da raiz.
+## Configuração
 
-## 1. Configurar as variaveis
+Crie o arquivo `.env` a partir do exemplo:
 
-O arquivo `.env` da raiz deve conter, no minimo:
+```bash
+cp .env.example .env
+```
+
+No PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+As variáveis efetivamente utilizadas pela API são:
 
 ```env
 PORT=3000
 
-MONGO_URI=mongodb://admin:adminpassword@localhost:27017/aeolus_db?authSource=admin
+KAFKA_BROKERS=localhost:9092
+
+MONGO_URI=mongodb://admin:adminpassword@localhost:27018/aeolus_db?authSource=admin
 MONGO_USER=admin
 MONGO_PASSWORD=adminpassword
 MONGO_AUTH_SOURCE=admin
@@ -53,117 +65,46 @@ MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadminpassword
 MINIO_BUCKET_NAME=camera-events
-
-CLICKHOUSE_URL=http://127.0.0.1:8123
-CLICKHOUSE_DATABASE=aeolus_analytics
-CLICKHOUSE_USER=clickhouse_user
-CLICKHOUSE_PASSWORD=clickhouse_pass
-CLICKHOUSE_TABLE=camera_events
 ```
 
-O `.env` nao deve ser versionado. Se ele nao existir, crie-o a partir dos valores acima.
+> Atualmente, a conexão com ClickHouse é definida diretamente em `src/service/clickhouse.service.js`: `http://127.0.0.1:8124`, banco `aeolus_analytics`, usuário `clickhouse_user`, senha `clickhouse_pass` e tabela `camera_events`.
 
-## 2. Subir a infraestrutura
+## Executar
 
-Na raiz do repositorio:
+Suba os serviços de infraestrutura e o produtor de eventos:
 
 ```bash
 docker compose up -d
 ```
 
-Confira os containers:
-
-```bash
-docker compose ps
-```
-
-Todos estes servicos devem estar em execucao:
-
-- `mongodb`
-- `minio`
-- `clickhouse`
-- `clg_zookeeper`
-- `clg_kafka`
-- `clg_kafbat-ui`
-
-### Testar MongoDB, ClickHouse e Kafka
-
-Teste o ClickHouse:
-
-```bash
-curl http://localhost:8124/ping
-```
-
-A resposta esperada e `Ok.`.
-
-Teste a conectividade externa do Kafka iniciando o produtor no passo 4. A primeira mensagem enviada confirma que o broker esta acessivel.
-
-O MongoDB sera validado quando a API principal iniciar e exibir `Conectado ao MongoDB`.
-
-## 3. Criar o bucket no MinIO
-
-O bucket precisa existir antes do primeiro evento ser processado.
-
-1. Abra `http://localhost:9001`.
-2. Entre com:
-   - Usuario: `minioadmin`
-   - Senha: `minioadminpassword`
-3. Acesse **Buckets** e selecione **Create Bucket**.
-4. Crie o bucket com o nome `camera-events`.
-
-Teste visualmente acessando o bucket depois que o primeiro evento for gerado. As imagens serao adicionadas pelo consumidor da API principal.
-
-## 4. Iniciar o produtor de eventos
-
-O produtor e a imagem `lipinhozn/device-event-api:latest` ja fazem parte do Compose.
-Ao executar `docker compose up -d`, ele fica disponivel no WSL e no Windows em
-`http://localhost:3030`. A conexao dele com o Kafka usa a rede interna do Docker;
-nao e preciso instalar nem iniciar outro processo Node.js.
-
-Teste o produtor:
-
-```bash
-curl http://localhost:3030/api/health
-```
-
-A resposta deve conter `status: healthy`.
-
-Teste o Kafka pelo produtor:
-
-```bash
-curl http://localhost:3030/api/kafka/topic-info
-```
-
-A resposta deve informar o topico `device-events`.
-
-## 5. Instalar e iniciar a API principal
-
-Abra outro terminal na raiz do repositorio:
+Instale as dependências e inicie a API principal em outro terminal:
 
 ```bash
 npm install
 npm run dev
 ```
 
-A API deve iniciar na porta `3000`. Durante a inicializacao, ela tambem conecta o consumidor ao topico Kafka `device-events`.
+A API conecta ao MongoDB e inicia um consumer Kafka do tópico `device-events`. Portanto, MongoDB e Kafka precisam estar disponíveis antes de iniciar a aplicação.
 
-Verifique se a lista inicial de cameras esta acessivel:
+O bucket configurado em `MINIO_BUCKET_NAME` é criado automaticamente na primeira operação de upload ou geração de URL assinada; não é necessário criá-lo manualmente.
 
-```bash
-curl http://localhost:3000/api/cameras
-```
+## Endpoints da API principal
 
-A resposta esperada e uma lista JSON, normalmente `[]` em uma instalacao nova.
+### Câmeras
 
-## 6. Teste completo do fluxo
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| `POST` | `/api/cameras` | Cria uma câmera e registra seu `cameraId` no serviço de dispositivos. |
+| `GET` | `/api/cameras` | Lista as câmeras cadastradas. |
+| `GET` | `/api/cameras/:cameraId` | Busca uma câmera pelo identificador. |
+| `PUT` | `/api/cameras/:cameraId` | Atualiza `cameraName`, `zona` e `enderecoRTSP`. |
+| `DELETE` | `/api/cameras/:cameraId` | Remove o dispositivo externo e a câmera local. |
 
-### 6.1 Criar uma camera
-
-A criacao salva a camera no MongoDB e registra o dispositivo no produtor. O produtor gera o primeiro evento imediatamente e depois continua gerando eventos no intervalo configurado.
+Criar uma câmera:
 
 ```bash
 curl -X POST http://localhost:3000/api/cameras \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
   -d '{
     "cameraName": "camera-teste-01",
     "zona": "zona-1",
@@ -171,156 +112,55 @@ curl -X POST http://localhost:3000/api/cameras \
   }'
 ```
 
-A resposta esperada e HTTP `201`, contendo `cameraId`, `cameraName`, `zona` e `enderecoRTSP`.
+O corpo exige os campos `cameraName`, `zona` e `enderecoRTSP`. O retorno inclui o `cameraId`, usado nas demais operações.
 
-### 6.2 Listar e consultar a camera
+### Eventos
 
-```bash
-curl http://localhost:3000/api/cameras
-```
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| `GET` | `/api/events` | Lista eventos armazenados no ClickHouse. |
+| `GET` | `/api/events/:eventId/image` | Retorna uma URL pré-assinada, válida por 5 minutos, para a imagem do evento. |
 
-Substitua o ID abaixo pelo `cameraId` retornado na criacao:
+Parâmetros opcionais de `GET /api/events`:
 
-```bash
-cameraId="COLE_O_CAMERA_ID_AQUI"
-curl "http://localhost:3000/api/cameras/$cameraId"
-```
+| Parâmetro | Descrição |
+| --- | --- |
+| `page` | Página, com padrão `1`. |
+| `limit` | Itens por página, entre `1` e `100`; padrão `20`. |
+| `cameraId` | Filtra por `device_id`. |
+| `eventType` | Filtra por `event_type`. |
+| `imageKey` | Filtra por `image_key`. |
+| `from` ou `dateFrom` | Data/hora inicial. |
+| `to` ou `dateTo` | Data/hora final. |
 
-Confirme tambem que o dispositivo foi registrado no produtor:
-
-```bash
-curl http://localhost:3030/api/devices
-curl "http://localhost:3030/api/devices/$cameraId/status"
-```
-
-### 6.3 Consultar eventos processados
-
-Aguarde a chegada de pelo menos um evento e consulte a API principal:
+Exemplos:
 
 ```bash
 curl "http://localhost:3000/api/events?limit=5"
+curl "http://localhost:3000/api/events?cameraId=SEU_CAMERA_ID&page=1&limit=20"
+curl "http://localhost:3000/api/events/SEU_EVENT_ID/image"
 ```
 
-A resposta deve conter `items` com campos como `event_id`, `device_id`, `event_timestamp`, `image_key` e `value`.
+## Fluxo de teste manual
 
-Esse teste confirma o fluxo:
+1. Suba o Compose e a API principal.
+2. Crie uma câmera em `POST /api/cameras`.
+3. O `device-event-api` registra o dispositivo e publica eventos no Kafka.
+4. Aguarde alguns segundos e consulte `GET /api/events?limit=5`.
+5. Copie um `event_id` retornado e consulte `GET /api/events/:eventId/image`.
 
-1. O produtor gera a imagem e publica no Kafka.
-2. O consumidor da API principal recebe a mensagem.
-3. A imagem e enviada ao MinIO.
-4. Os metadados sao gravados no ClickHouse.
-5. A API principal retorna o evento.
+Também é possível verificar o produtor em `GET http://localhost:3030/api/health` e acompanhar o tópico `device-events` no Kafbat UI (`http://localhost:8082`, usuário `admin`, senha `123456`).
 
-### 6.4 Obter a imagem do evento
-
-Copie o valor de `event_id` retornado na consulta anterior:
-
-```bash
-eventId="COLE_O_EVENT_ID_AQUI"
-curl "http://localhost:3000/api/events/$eventId/image"
-```
-
-A resposta deve conter uma URL temporaria assinada do MinIO. Abra essa URL no navegador para visualizar a imagem.
-
-### 6.5 Atualizar e remover a camera
-
-```bash
-curl -X PUT "http://localhost:3000/api/cameras/$cameraId" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "cameraName": "camera-teste-01-atualizada",
-    "zona": "zona-2",
-    "enderecoRTSP": "rtsp://localhost:8554/camera-teste-01"
-  }'
-
-curl -X DELETE "http://localhost:3000/api/cameras/$cameraId"
-```
-
-Depois da remocao, confirme:
-
-```bash
-curl http://localhost:3030/api/devices
-curl http://localhost:3000/api/cameras
-```
-
-## 7. Monitorar o Kafka
-
-Abra `http://localhost:8081`.
-
-Credenciais:
-
-- Usuario: `admin`
-- Senha: `123456`
-
-No Kafbat, localize o cluster `local_cluster` e o topico `device-events`. Depois de criar uma camera, devem aparecer mensagens com o `deviceId` e os dados do evento.
-
-## 8. Testar pelo Postman
-
-O arquivo `backend-challenge-01-main/postman-collection.json` contem a colecao do produtor.
-
-1. Abra o Postman.
-2. Importe esse arquivo.
-3. Configure `baseUrl` como `http://localhost:3030`.
-4. Execute `GET /api/health`.
-5. Execute `POST /api/devices` com um `deviceId` de teste.
-6. Execute `GET /api/devices` e `GET /api/devices/:deviceId/status`.
-7. Execute `DELETE /api/devices/:deviceId` ao terminar.
-
-Para testar a API principal, use as URLs `http://localhost:3000/api/cameras` e `http://localhost:3000/api/events` com os mesmos corpos mostrados neste README.
-
-## Parar os servicos
-
-Pare a API principal com `Ctrl+C`. Depois, na raiz:
+## Parar o ambiente
 
 ```bash
 docker compose down
 ```
 
-Para remover tambem os dados persistidos do MongoDB, MinIO e ClickHouse:
+Para remover também os volumes persistidos do MongoDB:
 
 ```bash
 docker compose down -v
 ```
 
-> O comando `down -v` apaga os volumes e todos os dados locais armazenados nesses servicos.
-
-## Solucao de problemas
-
-### A API principal nao conecta ao MongoDB
-
-Confirme se o container esta ativo e se o `.env` usa a porta `27019`:
-
-```bash
-docker compose ps mongodb
-```
-
-### O produtor retorna erro de Kafka
-
-Confirme que esta usando `KAFKA_BROKERS=localhost:9092` e que o Kafka da raiz esta ativo:
-
-```bash
-docker compose ps kafka zookeeper
-```
-
-### A camera retorna HTTP 502
-
-O produtor provavelmente nao esta rodando na porta `3030`. Teste:
-
-```bash
-curl http://localhost:3030/api/health
-```
-
-### Os eventos aparecem no Kafka, mas nao na API
-
-Confira se:
-
-- a API principal esta em execucao;
-- o consumidor conseguiu conectar ao Kafka;
-- o bucket `camera-events` existe no MinIO;
-- o ClickHouse responde em `http://localhost:8124/ping`.
-
-Verifique os logs do terminal da API principal para identificar falhas de upload ou de insercao no ClickHouse.
-
-### O evento existe, mas a imagem nao abre
-
-Confirme que o bucket no MinIO se chama exatamente `camera-events` e que as credenciais do `.env` correspondem ao container.
+> `docker compose down -v` remove os dados persistidos do ambiente local.
