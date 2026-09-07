@@ -1,20 +1,13 @@
 import axios from 'axios';
-import { randomUUID } from 'node:crypto';
 
-const eventIdPadrao = `toUUID(concat(
-    substring(hex(MD5(concat(device_id, toString(event_timestamp), image_key))), 1, 8), '-',
-    substring(hex(MD5(concat(device_id, toString(event_timestamp), image_key))), 9, 4), '-',
-    substring(hex(MD5(concat(device_id, toString(event_timestamp), image_key))), 13, 4), '-',
-    substring(hex(MD5(concat(device_id, toString(event_timestamp), image_key))), 17, 4), '-',
-    substring(hex(MD5(concat(device_id, toString(event_timestamp), image_key))), 21, 12)
-))`;
+const eventIdPadrao = 'generateUUIDv4()';
 
 const obterConfiguracao = () => ({
-    url: process.env.CLICKHOUSE_URL || 'http://127.0.0.1:8123',
-    database: process.env.CLICKHOUSE_DATABASE || 'aeolus_analytics',
-    username: process.env.CLICKHOUSE_USER || 'clickhouse_user',
-    password: process.env.CLICKHOUSE_PASSWORD || 'clickhouse_pass',
-    table: process.env.CLICKHOUSE_TABLE || 'camera_events',
+    url: 'http://127.0.0.1:8124',
+    database: 'aeolus_analytics',
+    username: 'clickhouse_user',
+    password: 'clickhouse_pass',
+    table: 'camera_events',
 });
 
 const executarQuery = async (query, data = '') => {
@@ -73,42 +66,39 @@ const buscarImagemEvento = async (eventId) => {
 const escaparTexto = (valor) => `'${String(valor).replaceAll("'", "''")}'`;
 
 const adicionarFiltroTexto = (condicoes, campo, valor) => {
-    if (valor !== undefined && valor !== '') {
+    const valorExiste = valor !== undefined && valor !== '';
+    if (valorExiste) {
         condicoes.push(`${campo} = ${escaparTexto(valor)}`);
     }
 };
 
-const adicionarFiltroNumero = (condicoes, campo, operador, valor) => {
-    if (valor !== undefined && valor !== '' && Number.isFinite(Number(valor))) {
-        condicoes.push(`${campo} ${operador} ${Number(valor)}`);
-    }
-};
+const primeiroValor = (...valores) => valores.find((valor) => valor !== undefined && valor !== '');
 
-const listarEventos = async (filtros = {}) => {
+const listarEventos = async (queryParams = {}) => {
     const { table } = obterConfiguracao();
     await criarTabelaEventos();
-
-    const pagina = Math.max(Number.parseInt(filtros.page, 10) || 1, 1);
-    const limite = Math.min(Math.max(Number.parseInt(filtros.limit, 10) || 20, 1), 100);
+    const paginaInformada = Number.parseInt(queryParams.page, 10);
+    const limiteInformado = Number.parseInt(queryParams.limit, 10);
+    const pagina = paginaInformada > 0 ? paginaInformada : 1;
+    const limite = limiteInformado >= 1 && limiteInformado <= 100 ? limiteInformado : 20;
     const offset = (pagina - 1) * limite;
     const condicoes = [];
 
-    adicionarFiltroTexto(condicoes, 'device_id', filtros.deviceId || filtros.camera || filtros.device_id);
-    adicionarFiltroTexto(condicoes, 'event_type', filtros.eventType || filtros.event_type);
-    adicionarFiltroTexto(condicoes, 'image_key', filtros.imageKey || filtros.image_key);
-    adicionarFiltroTexto(condicoes, 'image_format', filtros.imageFormat || filtros.image_format);
-    adicionarFiltroTexto(condicoes, 'image_position', filtros.imagePosition || filtros.image_position);
-    adicionarFiltroNumero(condicoes, 'value', '=', filtros.value);
-    adicionarFiltroNumero(condicoes, 'value', '>=', filtros.valueMin);
-    adicionarFiltroNumero(condicoes, 'value', '<=', filtros.valueMax);
-    adicionarFiltroNumero(condicoes, 'image_size', '=', filtros.imageSize || filtros.image_size);
+    adicionarFiltroTexto(condicoes, 'device_id', queryParams.cameraId);
+    adicionarFiltroTexto(condicoes, 'event_type', queryParams.eventType);
+    adicionarFiltroTexto(condicoes, 'image_key', queryParams.imageKey);
 
-    if (filtros.from || filtros.dateFrom) {
-        condicoes.push(`event_timestamp >= parseDateTimeBestEffort(${escaparTexto(filtros.from || filtros.dateFrom)})`);
+    console.log(condicoes)
+
+    const dataInicial = primeiroValor(queryParams.from, queryParams.dateFrom);
+    const dataFinal = primeiroValor(queryParams.to, queryParams.dateTo);
+
+    if (dataInicial) {
+        condicoes.push(`event_timestamp >= parseDateTimeBestEffort(${escaparTexto(dataInicial)})`);
     }
 
-    if (filtros.to || filtros.dateTo) {
-        condicoes.push(`event_timestamp <= parseDateTimeBestEffort(${escaparTexto(filtros.to || filtros.dateTo)})`);
+    if (dataFinal) {
+        condicoes.push(`event_timestamp <= parseDateTimeBestEffort(${escaparTexto(dataFinal)})`);
     }
 
     const where = condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : '';
@@ -116,9 +106,7 @@ const listarEventos = async (filtros = {}) => {
         consultarQuery(`SELECT * FROM ${table} ${where} ORDER BY event_timestamp DESC LIMIT ${limite} OFFSET ${offset}`),
         consultarQuery(`SELECT count() AS total FROM ${table} ${where}`),
     ]);
-
     const totalItens = Number(total.data?.[0]?.total || 0);
-
     return {
         items: resultado.data || [],
         pagination: {
@@ -153,16 +141,6 @@ const criarTabelaEventos = async () => {
         ENGINE = MergeTree
         ORDER BY (device_id, event_timestamp)
     `);
-
-    await executarQuery(`
-        ALTER TABLE ${table}
-        ADD COLUMN IF NOT EXISTS event_id UUID DEFAULT ${eventIdPadrao}
-    `);
-
-    await executarQuery(`
-        ALTER TABLE ${table}
-        MODIFY COLUMN event_id UUID DEFAULT ${eventIdPadrao}
-    `);
 };
 
 const inserirEvento = async (evento, imageKey) => {
@@ -171,7 +149,6 @@ const inserirEvento = async (evento, imageKey) => {
     await criarTabelaEventos();
 
     const linha = {
-        event_id: randomUUID(),
         device_id: String(evento.deviceId || ''),
         event_timestamp: new Date(evento.timestamp || Date.now()).toISOString().replace('T', ' ').replace('Z', ''),
         value: Number(evento.value || 0),

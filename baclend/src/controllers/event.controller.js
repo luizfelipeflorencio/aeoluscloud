@@ -3,7 +3,8 @@ import { buscarImagemEvento, listarEventos } from '../service/clickhouse.service
 
 export const consultarEventos = async (req, res) => {
     try {
-        const resultado = await listarEventos(req.query);
+        const queryParams = req.query;
+        const resultado = await listarEventos(queryParams);
         res.status(200).json(resultado);
     } catch (error) {
         res.status(500).json({ message: 'Não foi possível consultar os eventos.', error: error.message });
