@@ -7,7 +7,7 @@ Sistema de captura de eventos de cameras composto por:
 - ClickHouse: armazenamento e consulta dos eventos.
 - Kafka e Zookeeper: fila de eventos.
 - Kafbat UI: monitoramento do Kafka.
-- `backend-challenge-01-main`: produtor de eventos e gerador de imagens.
+- `device-event-api`: produtor de eventos e gerador de imagens.
 - API principal: cadastro de cameras, consumo dos eventos e consultas.
 
 ## Pre-requisitos
@@ -113,28 +113,14 @@ O bucket precisa existir antes do primeiro evento ser processado.
 
 Teste visualmente acessando o bucket depois que o primeiro evento for gerado. As imagens serao adicionadas pelo consumidor da API principal.
 
-## 4. Instalar e iniciar o produtor de eventos
+## 4. Iniciar o produtor de eventos
 
-Abra um terminal na pasta do produtor:
+O produtor e a imagem `lipinhozn/device-event-api:latest` ja fazem parte do Compose.
+Ao executar `docker compose up -d`, ele fica disponivel no WSL e no Windows em
+`http://localhost:3030`. A conexao dele com o Kafka usa a rede interna do Docker;
+nao e preciso instalar nem iniciar outro processo Node.js.
 
-```bash
-cd backend-challenge-01-main
-npm install
-```
-
-O produtor precisa usar a porta `3030` e o Kafka externo da composicao raiz:
-
-```bash
-export PORT=3030
-export HOST=localhost
-export KAFKA_BROKERS=localhost:9092
-export KAFKA_TOPIC=device-events
-export MIN_EVENT_INTERVAL=3000
-export MAX_EVENT_INTERVAL=10000
-npm run dev
-```
-
-Deixe esse terminal aberto. Em outro terminal, teste:
+Teste o produtor:
 
 ```bash
 curl http://localhost:3030/api/health
@@ -155,7 +141,6 @@ A resposta deve informar o topico `device-events`.
 Abra outro terminal na raiz do repositorio:
 
 ```bash
-cd ..
 npm install
 npm run dev
 ```
@@ -285,7 +270,7 @@ Para testar a API principal, use as URLs `http://localhost:3000/api/cameras` e `
 
 ## Parar os servicos
 
-Pare a API principal e o produtor com `Ctrl+C` nos respectivos terminais. Depois, na raiz:
+Pare a API principal com `Ctrl+C`. Depois, na raiz:
 
 ```bash
 docker compose down

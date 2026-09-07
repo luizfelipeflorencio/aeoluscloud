@@ -3,7 +3,7 @@ services:
     image: mongo:6.0
     restart: always
     ports:
-      - "27017:27017"
+      - "27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: adminpassword
@@ -13,7 +13,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: aeolus_minio
     restart: always
     command: server /data --console-address ":9001"
     ports:
@@ -25,7 +24,6 @@ services:
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
-    container_name: aeolus_clickhouse
     restart: always
     ports:
       - "8124:8123"
@@ -37,43 +35,57 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
-    container_name: aeolus_zookeeper
+    restart: always
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
-    restart: on-failure
     ports:
-      - 2182:2181
+      - "2182:2181"
 
   kafka:
     image: confluentinc/cp-kafka:7.9.1
-    container_name: aeolus_kafka
-    restart: on-failure
+    restart: always
     depends_on:
       - zookeeper
     environment:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
-      - 9092:9092
+      - "9092:9092"
+
+  device-event-api:
+    image: lipinhozn/device-event-api:latest
+    restart: always
+    depends_on:
+      - kafka
+    ports:
+      - "3030:3030"
+    environment:
+      PORT: 3030
+      HOST: 0.0.0.0
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC: device-events
+      MIN_EVENT_INTERVAL: 3000
+      MAX_EVENT_INTERVAL: 10000
 
   kafbat-ui:
-    restart: on-failure
-    image: ghcr.io/kafbat/kafka-ui
-    network_mode: host
+    image: ghcr.io/kafbat/kafka-ui:latest
+    restart: always
     depends_on:
       - kafka
     environment:
-      DYNAMIC_CONFIG_ENABLED: 'true'
+      DYNAMIC_CONFIG_ENABLED: "true"
       KAFKA_CLUSTERS_0_NAME: local_cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: localhost:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       SERVER_PORT: 8081
-      AUTH_TYPE: "LOGIN_FORM"
+      AUTH_TYPE: LOGIN_FORM
       SPRING_SECURITY_USER_NAME: admin
       SPRING_SECURITY_USER_PASSWORD: 123456
+    ports:
+      - "8082:8081"
 
 volumes:
   mongo_data:
